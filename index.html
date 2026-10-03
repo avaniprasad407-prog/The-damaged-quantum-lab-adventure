@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>THE QUANTUM LAB: ESCAPE</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0f172a; font-family: system-ui, -apple-system, sans-serif; user-select: none; }
+    #canvas-container { width: 100vw; height: 100vh; position: relative; cursor: crosshair; }
+    .glass-panel { background: rgba(255, 255, 255, 0.92); backdrop-filter: blur(12px); }
+    .dark-glass { background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px); }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <!-- HUD OVERLAY -->
+  <div id="hud" class="fixed inset-0 pointer-events-none z-20 flex flex-col justify-between p-4 sm:p-6 hidden">
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex flex-col gap-1.5 max-w-md">
+        <div class="flex items-center gap-2 text-xs text-sky-950 font-medium glass-panel px-3.5 py-1.5 rounded-xl border border-white/60 shadow-sm pointer-events-auto w-fit">
+          <span id="hud-room-num" class="font-bold text-sky-600">Room 1 of 7</span>
+          <span class="text-slate-300">·</span>
+          <span id="hud-room-name" class="font-semibold text-slate-800">The Power Core</span>
+        </div>
+        <div class="dark-glass border border-slate-700/60 text-white px-3.5 py-2 rounded-xl shadow-lg flex items-center gap-2.5 text-xs pointer-events-auto">
+          <span class="text-sky-400 font-bold">◎</span>
+          <span id="hud-objective" class="leading-snug">Restore the reactor power by aligning the quantum state to |0⟩</span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2.5">
+        <div class="hidden sm:flex items-center gap-3 glass-panel border border-white/60 px-3.5 py-1.5 rounded-xl shadow-sm text-xs font-semibold text-slate-700 pointer-events-auto">
+          <span title="Quantum Orbs">🔵 <span id="hud-orbs">0</span>/7</span>
+          <span class="text-slate-300">|</span>
+          <span title="Schrödinger's Cats">🐱 <span id="hud-cats">0</span>/7</span>
+          <span class="text-slate-300">|</span>
+          <span title="Stars">⭐ <span id="hud-stars">0</span>/21</span>
+        </div>
+
+        <div class="flex items-center gap-1.5 glass-panel border border-white/60 p-1 rounded-xl shadow-sm pointer-events-auto">
+          <button onclick="window.GameUI.nextHint()" class="px-2.5 py-1.5 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold">💡 Hint [H]</button>
+          <button onclick="window.GameUI.toggleMiniMap()" class="px-2.5 py-1.5 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold">🧭 Map [M]</button>
+          <button onclick="window.GameUI.openNotebook()" class="px-2.5 py-1.5 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold">📓 Notebook [Tab]</button>
+          <button onclick="window.GameUI.openPause()" class="px-2.5 py-1.5 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold">⏸ [Esc]</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MINI-MAP -->
+    <div id="minimap-box" class="absolute top-20 right-6 w-44 h-44 dark-glass border border-slate-700 rounded-2xl p-2.5 shadow-2xl pointer-events-auto">
+      <div class="flex items-center justify-between text-[11px] text-slate-300 font-semibold mb-1 px-1">
+        <span>LAB RADAR</span>
+        <span id="minimap-rm" class="text-sky-400 font-mono">RM 1</span>
+      </div>
+      <div class="relative w-full h-32 bg-slate-950/90 border border-slate-800 rounded-lg overflow-hidden">
+        <div class="absolute inset-0 opacity-25" style="background-image: linear-gradient(to right, #334155 1px, transparent 1px), linear-gradient(to bottom, #334155 1px, transparent 1px); background-size: 16px 16px;"></div>
+        <div class="absolute right-1 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-emerald-400 rounded-full" title="Exit Door"></div>
+        <div id="minimap-dot" class="absolute w-3 h-3 bg-sky-400 rounded-full border border-white shadow" style="left:50%;top:50%;transform:translate(-50%,-50%);"></div>
+      </div>
+    </div>
+
+    <!-- INTERACT PROMPT -->
+    <div id="interact-prompt" class="self-center mb-6 pointer-events-auto hidden">
+      <div class="dark-glass border border-sky-400/50 text-white px-5 py-2.5 rounded-full shadow-2xl flex items-center gap-3">
+        <span class="w-6 h-6 rounded-md bg-sky-500 text-slate-950 font-bold font-mono text-xs flex items-center justify-center">E</span>
+        <span class="text-sm font-medium">Interact with <strong id="interact-name" class="text-sky-300 font-semibold">Terminal</strong></span>
+      </div>
+    </div>
+
+    <!-- SUBTITLE BANNER -->
+    <div id="subtitle-box" class="self-center w-full max-w-2xl pointer-events-auto hidden">
+      <div class="dark-glass border border-slate-700/80 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-start gap-3.5">
+        <div id="subtitle-avatar" class="w-8 h-8 rounded-full bg-gradient-to-tr from-sky-600 to-cyan-400 text-slate-950 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">Q</div>
+        <div class="flex-1">
+          <span id="subtitle-speaker" class="text-xs font-bold text-sky-400 block mb-0.5">Q</span>
+          <p id="subtitle-text" class="text-sm text-slate-100 leading-relaxed"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- START SCREEN MODAL -->
+  <div id="start-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4 overflow-y-auto">
+    <div class="w-full max-w-3xl bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden my-auto flex flex-col">
+      <div class="bg-gradient-to-r from-sky-500 via-teal-400 to-cyan-400 p-6 sm:p-8 text-white">
+        <div class="inline-flex items-center gap-2 bg-white/20 px-3 py-1 rounded-full text-xs font-semibold uppercase mb-2">✨ 3D Browser Escape Room & Adventure</div>
+        <h1 class="text-2xl sm:text-4xl font-extrabold tracking-tight mb-2">THE QUANTUM LAB: ESCAPE</h1>
+        <p class="text-xs sm:text-sm text-sky-50 max-w-xl leading-relaxed">
+          A sudden power failure has sealed all 7 blast doors in the futuristic research facility. Guide young scientist <strong>Arya</strong> and her holographic AI companion <strong>Q</strong> to solve quantum mysteries, find hidden clues, and escape!
+        </p>
+      </div>
+      <div class="p-6 grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs bg-slate-50 border-b border-slate-200">
+        <div class="p-2.5 bg-white border border-slate-200 rounded-xl flex justify-between"><span>Walk & Move</span><strong class="font-mono">W A S D / Arrows</strong></div>
+        <div class="p-2.5 bg-white border border-slate-200 rounded-xl flex justify-between"><span>Rotate Camera</span><strong class="font-mono">Mouse (Click canvas)</strong></div>
+        <div class="p-2.5 bg-white border border-slate-200 rounded-xl flex justify-between"><span>Run / Sprint</span><strong class="font-mono">Shift</strong></div>
+        <div class="p-2.5 bg-white border border-slate-200 rounded-xl flex justify-between"><span>Jump / Crouch</span><strong class="font-mono">Space / C</strong></div>
+        <div class="p-2.5 bg-white border border-slate-200 rounded-xl flex justify-between"><span>Interact / Inspect</span><strong class="font-mono text-sky-700">E</strong></div>
+        <div class="p-2.5 bg-white border border-slate-200 rounded-xl flex justify-between"><span>Notebook / Hint / Pause</span><strong class="font-mono">Tab / H / Esc</strong></div>
+      </div>
+      <div class="p-6 flex items-center justify-between bg-white">
+        <button onclick="window.GameUI.toggleScientistMode()" id="start-mode-btn" class="px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-100">
+          Mode: Explorer (Visual)
+        </button>
+        <button onclick="window.GameUI.startGame()" class="px-6 py-3 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-md">
+          ▶ Enter The Quantum Lab
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUANTUM TERMINAL MODAL -->
+  <div id="terminal-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-md p-4 hidden">
+    <div class="w-full max-w-4xl bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+        <div>
+          <span id="term-kicker" class="text-xs text-sky-600 font-bold uppercase">Room 1 Terminal</span>
+          <h2 id="term-title" class="text-lg font-bold text-slate-900">The Power Core</h2>
+        </div>
+        <button onclick="window.GameUI.closeModals()" class="px-3 py-1 text-slate-500 hover:bg-slate-200 rounded-lg text-sm font-bold">✕</button>
+      </div>
+      <div class="px-6 py-2 bg-sky-50 border-b border-sky-100 text-xs text-sky-950">
+        <strong>Mission:</strong> <span id="term-mission"></span>
+      </div>
+      <div class="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div class="md:col-span-5 flex flex-col items-center justify-center bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <div id="term-bloch-box" class="flex flex-col items-center">
+            <svg viewBox="-120 -120 240 240" class="w-48 h-48">
+              <circle cx="0" cy="0" r="85" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="3,3"/>
+              <ellipse cx="0" cy="0" rx="85" ry="28" fill="none" stroke="#e2e8f0" stroke-width="1.5"/>
+              <line x1="0" y1="-100" x2="0" y2="100" stroke="#94a3b8" stroke-width="1.5"/>
+              <line x1="-100" y1="0" x2="100" y2="0" stroke="#94a3b8" stroke-width="1.5"/>
+              <text x="6" y="-88" font-size="11" fill="#0f172a" font-weight="bold">|0⟩</text>
+              <text x="6" y="98" font-size="11" fill="#0f172a" font-weight="bold">|1⟩</text>
+              <text x="88" y="4" font-size="10" fill="#64748b">|+⟩</text>
+              <text x="-106" y="4" font-size="10" fill="#64748b">|−⟩</text>
+              <line id="bloch-line" x1="0" y1="0" x2="0" y2="-80" stroke="#0284c7" stroke-width="3.5" stroke-linecap="round"/>
+              <circle id="bloch-tip" cx="0" cy="-80" r="6" fill="#38bdf8" stroke="#0369a1" stroke-width="2"/>
+            </svg>
+            <span id="bloch-label" class="font-mono text-xs font-bold text-sky-800 bg-white px-2.5 py-1 rounded border border-slate-200">|0⟩</span>
+          </div>
+          <div id="term-scientist-eq" class="w-full mt-3 p-2 bg-slate-900 text-sky-300 font-mono text-[11px] rounded hidden"></div>
+        </div>
+
+        <div class="md:col-span-7 flex flex-col gap-4">
+          <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-xs font-bold text-slate-600 uppercase">Quantum Circuit Wire</span>
+              <div class="flex gap-2">
+                <button onclick="window.GameUI.undoGate()" class="px-2 py-1 text-xs bg-white border border-slate-300 rounded hover:bg-slate-100">Undo</button>
+                <button onclick="window.GameUI.resetCircuit()" class="px-2 py-1 text-xs bg-white border border-slate-300 rounded hover:bg-red-50 text-red-600">Reset</button>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 mb-2">
+              <span class="w-12 font-mono text-xs font-bold">|0⟩_A</span>
+              <div id="wire-0-slots" class="flex-1 h-10 bg-white border border-slate-200 rounded-lg px-2 flex items-center gap-1.5 overflow-x-auto"></div>
+            </div>
+            <div id="wire-1-row" class="flex items-center gap-2 hidden">
+              <span class="w-12 font-mono text-xs font-bold">|0⟩_B</span>
+              <div id="wire-1-slots" class="flex-1 h-10 bg-white border border-slate-200 rounded-lg px-2 flex items-center gap-1.5 overflow-x-auto"></div>
+            </div>
+          </div>
+
+          <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+            <span class="text-xs font-bold text-slate-600 uppercase block mb-2">Apply Quantum Gates</span>
+            <div class="flex flex-wrap gap-2">
+              <button onclick="window.GameUI.addGate('X')" class="px-3.5 py-2 bg-white hover:bg-sky-50 border border-slate-300 rounded-lg text-xs font-bold">X <span class="block text-[10px] font-normal text-slate-400">Bit Flip</span></button>
+              <button onclick="window.GameUI.addGate('H')" class="px-3.5 py-2 bg-white hover:bg-sky-50 border border-slate-300 rounded-lg text-xs font-bold">H <span class="block text-[10px] font-normal text-slate-400">Superpos</span></button>
+              <button onclick="window.GameUI.addGate('Z')" class="px-3.5 py-2 bg-white hover:bg-sky-50 border border-slate-300 rounded-lg text-xs font-bold">Z <span class="block text-[10px] font-normal text-slate-400">Phase Flip</span></button>
+              <button id="btn-cnot" onclick="window.GameUI.addGate('CNOT')" class="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 border border-purple-300 rounded-lg text-xs font-bold text-purple-900 hidden">CNOT <span class="block text-[10px] font-normal text-purple-500">Control A→B</span></button>
+            </div>
+          </div>
+
+          <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-3">
+            <div class="flex gap-2">
+              <button onclick="window.GameUI.measureSingle()" class="px-4 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold hover:bg-slate-100">▶ Single Measure</button>
+              <button onclick="window.GameUI.run100Shots()" class="px-4 py-2 bg-sky-600 text-white rounded-lg text-xs font-semibold hover:bg-sky-700">📊 Run 100 Times (Histogram)</button>
+            </div>
+            <div id="term-hist-output" class="text-xs font-mono text-slate-700"></div>
+            <div id="term-feedback" class="p-3 rounded-lg text-xs hidden"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROOM 2: 100-COIN PROBABILITY WALL MODAL -->
+  <div id="coinwall-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 hidden">
+    <div class="w-full max-w-4xl bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+        <div>
+          <span class="text-xs text-teal-600 font-bold uppercase">Room 2 Signature Apparatus</span>
+          <h2 class="text-lg font-bold text-slate-900">100-Coin Quantum Probability Matrix</h2>
+        </div>
+        <button onclick="window.GameUI.closeModals()" class="px-3 py-1 text-slate-500 hover:bg-slate-200 rounded-lg text-sm font-bold">✕</button>
+      </div>
+      <div class="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div class="md:col-span-7 bg-slate-950 p-4 rounded-2xl flex flex-col items-center">
+          <div id="coin-grid-100" class="grid grid-cols-10 gap-1.5"></div>
+        </div>
+        <div class="md:col-span-5 flex flex-col gap-4">
+          <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+            <span class="text-xs font-bold text-slate-700 uppercase block mb-2">1. Prepare Qubit State</span>
+            <div class="grid grid-cols-3 gap-2">
+              <button onclick="window.GameUI.setCoinPrep('zero')" id="cw-prep-zero" class="p-2 border rounded-lg text-xs font-bold bg-white">|0⟩ (100% H)</button>
+              <button onclick="window.GameUI.setCoinPrep('plus')" id="cw-prep-plus" class="p-2 border rounded-lg text-xs font-bold bg-teal-600 text-white">|+⟩ (~50/50)</button>
+              <button onclick="window.GameUI.setCoinPrep('one')" id="cw-prep-one" class="p-2 border rounded-lg text-xs font-bold bg-white">|1⟩ (100% T)</button>
+            </div>
+          </div>
+          <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-2">
+            <button onclick="window.GameUI.collapse100Coins()" class="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow">
+              ⚡ MEASURE & COLLAPSE 100 COINS
+            </button>
+            <div id="cw-stats" class="text-xs font-mono text-center mt-2 font-bold text-slate-700">HEADS: 50% | TAILS: 50%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOTEBOOK / CLUE / PAUSE / ENDING MODALS -->
+  <div id="info-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-md p-4 hidden">
+    <div class="w-full max-w-2xl bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden flex flex-col max-h-[85vh]">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+        <h2 id="info-modal-title" class="text-base font-bold text-slate-900">Information</h2>
+        <button onclick="window.GameUI.closeModals()" class="px-3 py-1 text-slate-500 hover:bg-slate-200 rounded-lg text-sm font-bold">✕</button>
+      </div>
+      <div id="info-modal-body" class="p-6 overflow-y-auto text-xs text-slate-700 space-y-3"></div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. QUANTUM ENGINE (Mathematically Accurate 1Q & 2Q Statevector Simulator)
+    // =========================================================================
+    const INV_SQRT2 = 1 / Math.SQRT2;
+    const QuantumEngine = {
+      init1Q: () => [{ r: 1, i: 0 }, { r: 0, i: 0 }],
+      init2Q: () => [{ r: 1, i: 0 }, { r: 0, i: 0 }, { r: 0, i: 0 }, { r: 0, i: 0 }],
+      cAdd: (a, b) => ({ r: a.r + b.r, i: a.i + b.i }),
+      cMul: (a, b) => ({ r: a.r * b.r - a.i * b.i, i: a.r * b.i + a.i * b.r }),
+      cMagSq: (a) => a.r * a.r + a.i * a.i,
+      GATES: {
+        X: [[{r:0,i:0},{r:1,i:0}],[{r:1,i:0},{r:0,i:0}]],
+        Z: [[{r:1,i:0},{r:0,i:0}],[{r:0,i:0},{r:-1,i:0}]],
+        H: [[{r:INV_SQRT2,i:0},{r:INV_SQRT2,i:0}],[{r:INV_SQRT2,i:0},{r:-INV_SQRT2,i:0}]]
+      },
+      apply1Q(state, gName) {
+        const g = this.GATES[gName];
+        if (!g) return state;
+        return [
+          this.cAdd(this.cMul(g[0][0], state[0]), this.cMul(g[0][1], state[1])),
+          this.cAdd(this.cMul(g[1][0], state[0]), this.cMul(g[1][1], state[1]))
+        ];
+      },
+      run1Q(gates) {
+        let s = this.init1Q();
+        for (const g of gates) s = this.apply1Q(s, g);
+        return s;
+      },
+      apply2Q(state, gName, target = 0) {
+        if (gName === 'CNOT') return [state[0], state[1], state[3], state[2]];
+        const g = this.GATES[gName];
+        if (!g) return state;
+        const [s00, s01, s10, s11] = state;
+        if (target === 0) {
+          return [
+            this.cAdd(this.cMul(g[0][0], s00), this.cMul(g[0][1], s10)),
+            this.cAdd(this.cMul(g[0][0], s01), this.cMul(g[0][1], s11)),
+            this.cAdd(this.cMul(g[1][0], s00), this.cMul(g[1][1], s10)),
+            this.cAdd(this.cMul(g[1][0], s01), this.cMul(g[1][1], s11))
+          ];
+        }
+        return state;
+      },
+      probs1Q(s) {
+        const p0 = this.cMagSq(s[0]), p1 = this.cMagSq(s[1]);
+        const sum = p0 + p1 || 1;
+        return { prob0: p0 / sum, prob1: p1 / sum };
+      },
+      probs2Q(s) {
+        const p00 = this.cMagSq(s[0]), p01 = this.cMagSq(s[1]), p10 = this.cMagSq(s[2]), p11 = this.cMagSq(s[3]);
+        const sum = p00 + p01 + p10 + p11 || 1;
+        return { p00: p00 / sum, p01: p01 / sum, p10: p10 / sum, p11: p11 / sum };
+      },
+      bloch(s) {
+        const aMag = Math.sqrt(this.cMagSq(s[0]));
+        const phi = Math.atan2(s[1].i, s[1].r) - Math.atan2(s[0].i, s[0].r);
+        const theta = 2 * Math.acos(Math.max(0, Math.min(1, aMag)));
+        const x = Math.sin(theta) * Math.cos(phi);
+        const y = Math.sin(theta) * Math.sin(phi);
+        const z = Math.cos(theta);
+        let label = '|ψ⟩';
+        if (Math.abs(z - 1) < 0.05) label = '|0⟩';
+        else if (Math.abs(z + 1) < 0.05) label = '|1⟩';
+        else if (Math.abs(x - 1) < 0.08) label = '|+⟩';
+        else if (Math.abs(x + 1) < 0.08) label = '|−⟩';
+        return { x, y, z, label };
+      }
+    };
+
+    // =========================================================================
+    // 2. SOUND & SPEECH MANAGER (Procedural Web Audio & SpeechSynthesis)
+    // =========================================================================
+    const Sounds = {
+      ctx: null,
+      init() {
+        try {
+          if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+          if (this.ctx.state === 'suspended') this.ctx.resume();
+        } catch (e) {}
+      },
+      tone(freq, dur = 0.12, type = 'sine') {
+        try {
+          this.init();
+          if (!this.ctx) return;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+          gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + dur);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + dur);
+        } catch (e) {}
+      },
+      speak(speaker, text) {
+        const subBox = document.getElementById('subtitle-box');
+        document.getElementById('subtitle-speaker').textContent = speaker;
+        document.getElementById('subtitle-avatar').textContent = speaker[0];
+        document.getElementById('subtitle-text').textContent = '"' + text + '"';
+        subBox.classList.remove('hidden');
+        clearTimeout(this._subTimer);
+        this._subTimer = setTimeout(() => subBox.classList.add('hidden'), 5500);
+        try {
+          if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(text);
+            u.pitch = speaker === 'Q' ? 1.35 : 1.15;
+            u.rate = 1.05;
+            window.speechSynthesis.speak(u);
+          }
+        } catch (e) {}
+      }
+    };
+
+    // =========================================================================
+    // 3. ROOM CONFIGURATIONS & LORE
+    // =========================================================================
+    const ROOMS = [
+      { id: 1, name: 'The Power Core', obj: 'Restore reactor power by aligning the quantum state to |0⟩', hint: 'Ensure the state vector points straight up to |0⟩ and Run 100 Times.', vm: 'Ravi: The cryostat lost sync! Reset the pilot qubit to |0⟩ at the auxiliary terminal.', clue: 'North pole represents |0⟩, South pole represents |1⟩.', card: 'Qubit & Bloch Sphere: A qubit can exist in continuous states on the sphere.' },
+      { id: 2, name: 'The Dice Vault', obj: 'Generate a balanced superposition (~50/50) on the 100-Coin Wall or Terminal', hint: 'Apply the H gate to create |+⟩ superposition, then measure 100 times.', vm: 'Dr. Meera: The vault lock checks for genuine quantum entropy (~50/50 split).', clue: 'Prob(0) = |α|², Prob(1) = |β|².', card: 'Superposition & Measurement: Measuring forces a qubit to choose 0 or 1 probabilistically.' },
+      { id: 3, name: 'The Flip Corridor', obj: 'The door interlock expects state |1⟩. Invert the qubit from |0⟩', hint: 'Apply the Pauli-X gate to flip |0⟩ to |1⟩.', vm: 'Dr. Alex: The corridor blast door requires state |1⟩ to open.', clue: 'Pauli-X performs a 180° bit flip: X|0⟩ = |1⟩.', card: 'X Gate (Bit Flip): The quantum equivalent of a NOT switch.' },
+      { id: 4, name: 'The Split Light Lab', obj: 'Split the optical quantum beam equally with Hadamard (H) and verify 100 shots', hint: 'Add H to the circuit wire and click Run 100 Times.', vm: 'Dr. Meera: A 50-50 beam splitter works just like a Hadamard gate!', clue: 'H|0⟩ = 1/√2(|0⟩ + |1⟩).', card: 'H Gate (Hadamard): Turns a definite state into an equal superposition.' },
+      { id: 5, name: 'The Interference Chamber', obj: 'Use H → Z → H to convert relative phase into constructive interference at |1⟩', hint: 'Place H, then Z, then H on the wire and measure.', vm: 'Dr. Alex: Sandwich the Z phase flip between two H gates to see wave interference!', clue: 'H·Z·H|0⟩ = |1⟩.', card: 'Z Gate & Quantum Interference: Amplitudes can be negative and cancel out paths.' },
+      { id: 6, name: 'The Twin Control Room', obj: 'Set both qubits to |11⟩ using X on Qubit A and CNOT (A→B)', hint: 'Apply X to flip A to |1⟩, then apply CNOT to flip B to |1⟩.', vm: 'Ravi: When control A is 1, CNOT flips target B!', clue: 'CNOT |10⟩ = |11⟩.', card: 'CNOT Gate: Multi-qubit gate where one qubit controls another.' },
+      { id: 7, name: 'The Entanglement Core', obj: 'Create a Bell state (only 00 and 11 outcomes) using H and CNOT', hint: 'Place H on Qubit A, followed by CNOT (A→B), then Run 100 Times.', vm: 'Dr. Meera: Entangle the core qubits into |Φ+⟩ = 1/√2(|00⟩ + |11⟩) to open the roof exit!', clue: 'Bell state yields ~50% |00⟩ and ~50% |11⟩, never 01 or 10.', card: 'Quantum Entanglement: Strongly correlated quantum outcomes across qubits.' }
+    ];
+
+    // =========================================================================
+    // 4. 3D ENGINE, PROCEDURAL ARYA & ROOM BUILDER
+    // =========================================================================
+    let scene, camera, renderer, aryaGroup, qGroup, roomGroup;
+    let currentRoomIdx = 0;
+    const solvedRooms = new Set();
+    const collectedOrbs = new Set();
+    const collectedCats = new Set();
+    let interactables = [];
+    let exitDoor = null;
+    let coinWallMeshes = [];
+    let coinWallOutcomes = Array.from({ length: 100 }, (_, i) => (i % 2 === 0 ? 0 : 1));
+    let nearestInteractable = null;
+
+    const playerPos = new THREE.Vector3(-6, 0, 6);
+    let playerYaw = 0;
+    let camYaw = Math.PI, camPitch = 0.28;
+    let isPointerLocked = false;
+    let isModalOpen = true;
+    let isScientistMode = false;
+    const keys = {};
+
+    function initThree() {
+      const container = document.getElementById('canvas-container');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xdbeafe);
+      scene.fog = new THREE.FogExp2(0xe0f2fe, 0.012);
+
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      container.appendChild(renderer.domElement);
+
+      // Build Arya (Procedural Human Girl in Lab Coat)
+      aryaGroup = new THREE.Group();
+      const skinMat = new THREE.MeshStandardMaterial({ color: 0xf3bf98, roughness: 0.6 });
+      const coatMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.35 });
+      const hairMat = new THREE.MeshStandardMaterial({ color: 0x271710, roughness: 0.7 });
+      const pantsMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.7 });
+
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.45, 0.18), coatMat);
+      torso.position.y = 1.05;
+      aryaGroup.add(torso);
+
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 16), skinMat);
+      head.position.y = 1.42;
+      aryaGroup.add(head);
+
+      const ponytail = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.25, 10), hairMat);
+      ponytail.position.set(0, 1.38, -0.12);
+      ponytail.rotation.x = 0.4;
+      aryaGroup.add(ponytail);
+
+      const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.04, 0.75, 10), pantsMat);
+      legL.position.set(-0.08, 0.4, 0);
+      aryaGroup.add(legL);
+      const legR = legL.clone();
+      legR.position.x = 0.08;
+      aryaGroup.add(legR);
+      aryaGroup.userData = { legL, legR, head, ponytail };
+      scene.add(aryaGroup);
+
+      // Build Companion Q
+      qGroup = new THREE.Group();
+      const qCore = new THREE.Mesh(
+        new THREE.SphereGeometry(0.12, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+      );
+      const qRing = new THREE.Mesh(
+        new THREE.TorusGeometry(0.2, 0.01, 8, 24),
+        new THREE.MeshBasicMaterial({ color: 0x67e8f9 })
+      );
+      qGroup.add(qCore, qRing);
+      scene.add(qGroup);
+
+      buildRoomScene(0);
+
+      container.addEventListener('click', () => {
+        if (!isModalOpen && document.pointerLockElement !== container) {
+          try { container.requestPointerLock(); } catch (e) {}
+        }
+      });
+      document.addEventListener('pointerlockchange', () => {
+        isPointerLocked = document.pointerLockElement === container;
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (!isPointerLocked || isModalOpen) return;
+        camYaw -= e.movementX * 0.0024;
+        camPitch = Math.max(-0.2, Math.min(1.0, camPitch + e.movementY * 0.0024));
+      });
+      window.addEventListener('keydown', (e) => {
+        keys[e.code] = true;
+        if (e.code === 'KeyE' && !isModalOpen && nearestInteractable) {
+          window.GameUI.interact(nearestInteractable);
+        }
+        if (e.code === 'KeyH' && !isModalOpen) window.GameUI.nextHint();
+        if (e.code === 'KeyM' && !isModalOpen) window.GameUI.toggleMiniMap();
+        if (e.key === 'Tab') { e.preventDefault(); window.GameUI.openNotebook(); }
+        if (e.key === 'Escape') {
+          if (isModalOpen) window.GameUI.closeModals();
+          else window.GameUI.openPause();
+        }
+      });
+      window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      requestAnimationFrame(animate);
+    }
+
+    function buildRoomScene(idx) {
+      if (roomGroup) scene.remove(roomGroup);
+      roomGroup = new THREE.Group();
+      interactables = [];
+      coinWallMeshes = [];
+
+      const amb = new THREE.AmbientLight(0xffffff, 1.2);
+      const hemi = new THREE.HemisphereLight(0xffffff, 0xcbd5e1, 1.0);
+      roomGroup.add(amb, hemi);
+
+      const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(20, 20),
+        new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.2, metalness: 0.2 })
+      );
+      floor.rotation.x = -Math.PI / 2;
+      roomGroup.add(floor);
+
+      const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+      const wSouth = new THREE.Mesh(new THREE.BoxGeometry(20, 4.2, 0.2), wallMat);
+      wSouth.position.set(0, 2.1, 10);
+      const wWest = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4.2, 20), wallMat);
+      wWest.position.set(-10, 2.1, 0);
+      roomGroup.add(wSouth, wWest);
+
+      // Hero Cryostat (Dilution Refrigerator)
+      const cryo = new THREE.Group();
+      [3.4, 2.7, 2.0, 1.3].forEach((h, i) => {
+        const plate = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.65 - i * 0.1, 0.65 - i * 0.1, 0.06, 20),
+          new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.9, roughness: 0.2 })
+        );
+        plate.position.y = h;
+        cryo.add(plate);
+      });
+      roomGroup.add(cryo);
+
+      // Exit Door on East Wall (x = 9.8)
+      const doorFrame = new THREE.Mesh(
+        new THREE.BoxGeometry(0.25, 3.1, 2.6),
+        new THREE.MeshBasicMaterial({ color: solvedRooms.has(idx + 1) ? 0x22c55e : 0xef4444 })
+      );
+      doorFrame.position.set(9.8, 1.55, 0);
+      roomGroup.add(doorFrame);
+      exitDoor = doorFrame;
+
+      // Terminal Kiosk
+      const termMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.7, 1.3, 0.6),
+        new THREE.MeshStandardMaterial({ color: 0x0284c7 })
+      );
+      termMesh.position.set(4, 0.65, -5);
+      roomGroup.add(termMesh);
+      interactables.push({ id: 'term', name: 'Quantum Terminal', type: 'terminal', position: new THREE.Vector3(4, 0.8, -5), radius: 2.2 });
+
+      // Voicemail Station
+      const vmMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.4, 1.2, 0.4),
+        new THREE.MeshStandardMaterial({ color: 0xf59e0b })
+      );
+      vmMesh.position.set(-5, 0.6, -4);
+      roomGroup.add(vmMesh);
+      interactables.push({ id: 'vm', name: 'Scientist Voicemail', type: 'voicemail', position: new THREE.Vector3(-5, 0.8, -4), radius: 2.0 });
+
+      // Clue Whiteboard
+      const clueMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1.6, 1.1, 0.1),
+        new THREE.MeshStandardMaterial({ color: 0x38bdf8 })
+      );
+      clueMesh.position.set(-2, 1.6, -9.6);
+      roomGroup.add(clueMesh);
+      interactables.push({ id: 'clue', name: 'Research Whiteboard', type: 'clue', position: new THREE.Vector3(-2, 1.2, -9.2), radius: 2.2 });
+
+      // Quantum Orb & Cat Plush
+      if (!collectedOrbs.has(idx + 1)) {
+        const orbMesh = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 16), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+        orbMesh.position.set(-7.5, 0.5, 7.5);
+        roomGroup.add(orbMesh);
+        interactables.push({ id: 'orb', name: 'Quantum Orb', type: 'orb', position: orbMesh.position, radius: 1.8, mesh: orbMesh });
+      }
+      if (!collectedCats.has(idx + 1)) {
+        const catMesh = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 12), new THREE.MeshStandardMaterial({ color: 0xa855f7 }));
+        catMesh.position.set(7.5, 0.3, 7.5);
+        roomGroup.add(catMesh);
+        interactables.push({ id: 'cat', name: "Schrödinger's Cat Plush", type: 'cat', position: catMesh.position, radius: 1.8, mesh: catMesh });
+      }
+
+      // Room 2 Signature: 100-Coin Quantum Probability Wall on South Wall
+      if (idx + 1 === 2) {
+        const cwGroup = new THREE.Group();
+        cwGroup.position.set(0, 1.9, 9.7);
+        const back = new THREE.Mesh(new THREE.BoxGeometry(6.4, 3.0, 0.15), new THREE.MeshStandardMaterial({ color: 0x0f172a }));
+        cwGroup.add(back);
+        const cGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.03, 14);
+        cGeo.rotateX(Math.PI / 2);
+        for (let r = 0; r < 10; r++) {
+          for (let c = 0; c < 10; c++) {
+            const val = coinWallOutcomes[r * 10 + c];
+            const mat = new THREE.MeshBasicMaterial({ color: val === 0 ? 0x14b8a6 : 0xf59e0b });
+            const m = new THREE.Mesh(cGeo, mat);
+            m.position.set(-2.6 + c * 0.58, 1.0 - r * 0.22, 0.1);
+            cwGroup.add(m);
+            coinWallMeshes.push(m);
+          }
+        }
+        roomGroup.add(cwGroup);
+        interactables.push({ id: 'coin-wall', name: '100-Coin Quantum Probability Wall', type: 'coin-wall', position: new THREE.Vector3(0, 1.5, 8.8), radius: 2.8 });
+      }
+
+      scene.add(roomGroup);
+      playerPos.set(-6, 0, 6);
+      updateHUD();
+    }
+
+    let lastTime = performance.now();
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min(0.08, (now - lastTime) / 1000);
+      lastTime = now;
+
+      if (!isModalOpen) {
+        let ix = 0, iz = 0;
+        if (keys['KeyW'] || keys['ArrowUp']) iz -= 1;
+        if (keys['KeyS'] || keys['ArrowDown']) iz += 1;
+        if (keys['KeyA'] || keys['ArrowLeft']) ix -= 1;
+        if (keys['KeyD'] || keys['ArrowRight']) ix += 1;
+
+        const speed = (keys['ShiftLeft'] || keys['ShiftRight']) ? 5.8 : 3.5;
+        if (ix !== 0 || iz !== 0) {
+          const len = Math.hypot(ix, iz);
+          ix /= len; iz /= len;
+          const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw);
+          const rx = Math.cos(camYaw), rz = -Math.sin(camYaw);
+          const dx = fx * (-iz) + rx * ix;
+          const dz = fz * (-iz) + rz * ix;
+          playerPos.x = Math.max(-9.2, Math.min(9.4, playerPos.x + dx * speed * dt));
+          playerPos.z = Math.max(-9.2, Math.min(9.2, playerPos.z + dz * speed * dt));
+          playerYaw = Math.atan2(dx, dz);
+
+          const walkCycle = Math.sin(now * 0.01) * 0.45;
+          aryaGroup.userData.legL.rotation.x = walkCycle;
+          aryaGroup.userData.legR.rotation.x = -walkCycle;
+        } else {
+          aryaGroup.userData.legL.rotation.x = 0;
+          aryaGroup.userData.legR.rotation.x = 0;
+        }
+
+        // Check Room Transition through unlocked East Door
+        if (solvedRooms.has(currentRoomIdx + 1) && playerPos.x > 9.1 && Math.abs(playerPos.z) < 1.8) {
+          if (currentRoomIdx < 6) {
+            currentRoomIdx++;
+            buildRoomScene(currentRoomIdx);
+            Sounds.speak('Arya', 'Entered Room ' + (currentRoomIdx + 1) + ': ' + ROOMS[currentRoomIdx].name);
+          } else {
+            window.GameUI.showEnding();
+          }
+        }
+      }
+
+      aryaGroup.position.copy(playerPos);
+      aryaGroup.rotation.y = playerYaw;
+
+      qGroup.position.set(
+        playerPos.x + Math.cos(playerYaw + 1.2) * 0.7,
+        playerPos.y + 1.45 + Math.sin(now * 0.003) * 0.08,
+        playerPos.z + Math.sin(playerYaw + 1.2) * 0.7
+      );
+      qGroup.rotation.y += dt * 1.5;
+
+      // Nearest interactable check
+      nearestInteractable = null;
+      let bestDist = 2.5;
+      for (const obj of interactables) {
+        const d = playerPos.distanceTo(obj.position);
+        if (d < obj.radius && d < bestDist) {
+          bestDist = d;
+          nearestInteractable = obj;
+        }
+      }
+      const promptEl = document.getElementById('interact-prompt');
+      if (nearestInteractable && !isModalOpen) {
+        document.getElementById('interact-name').textContent = nearestInteractable.name;
+        promptEl.classList.remove('hidden');
+      } else {
+        promptEl.classList.add('hidden');
+      }
+
+      // Update Mini-Map Dot
+      const dot = document.getElementById('minimap-dot');
+      if (dot) {
+        dot.style.left = ((playerPos.x + 10) / 20 * 100) + '%';
+        dot.style.top = ((playerPos.z + 10) / 20 * 100) + '%';
+      }
+
+      // Camera Follow
+      const dist = 4.0;
+      const targetCam = new THREE.Vector3(
+        playerPos.x + Math.sin(camYaw) * Math.cos(camPitch) * dist,
+        Math.max(0.5, playerPos.y + 1.25 + Math.sin(camPitch) * dist),
+        playerPos.z + Math.cos(camYaw) * Math.cos(camPitch) * dist
+      );
+      camera.position.lerp(targetCam, 0.2);
+      camera.lookAt(playerPos.x, playerPos.y + 1.2, playerPos.z);
+
+      renderer.render(scene, camera);
+    }
+
+    // =========================================================================
+    // 5. UI & INTERACTION CONTROLLER
+    // =========================================================================
+    let wire0 = [];
+    let coinPrep = 'plus';
+
+    function updateHUD() {
+      const rm = ROOMS[currentRoomIdx];
+      document.getElementById('hud-room-num').textContent = `Room ${rm.id} of 7`;
+      document.getElementById('hud-room-name').textContent = rm.name;
+      document.getElementById('hud-objective').textContent = rm.obj;
+      document.getElementById('minimap-rm').textContent = `RM ${rm.id}`;
+      document.getElementById('hud-orbs').textContent = collectedOrbs.size;
+      document.getElementById('hud-cats').textContent = collectedCats.size;
+      document.getElementById('hud-stars').textContent = solvedRooms.size * 3;
+    }
+
+    window.GameUI = {
+      startGame() {
+        Sounds.tone(520, 0.15);
+        document.getElementById('start-modal').classList.add('hidden');
+        document.getElementById('hud').classList.remove('hidden');
+        isModalOpen = false;
+        Sounds.speak('Q', 'Arya! Power failure sealed the blast doors. Find the Quantum Terminal in each room to unlock the exit!');
+      },
+      toggleScientistMode() {
+        isScientistMode = !isScientistMode;
+        document.getElementById('start-mode-btn').textContent = isScientistMode ? 'Mode: Scientist (Matrices)' : 'Mode: Explorer (Visual)';
+      },
+      toggleMiniMap() {
+        document.getElementById('minimap-box').classList.toggle('hidden');
+      },
+      nextHint() {
+        const rm = ROOMS[currentRoomIdx];
+        Sounds.speak('Q', 'Hint: ' + rm.hint);
+      },
+      closeModals() {
+        document.getElementById('terminal-modal').classList.add('hidden');
+        document.getElementById('coinwall-modal').classList.add('hidden');
+        document.getElementById('info-modal').classList.add('hidden');
+        isModalOpen = false;
+      },
+      interact(obj) {
+        Sounds.tone(440, 0.1);
+        const rm = ROOMS[currentRoomIdx];
+        if (obj.type === 'terminal') {
+          isModalOpen = true;
+          if (document.pointerLockElement) document.exitPointerLock();
+          wire0 = [];
+          document.getElementById('term-kicker').textContent = `Room ${rm.id} Quantum Terminal`;
+          document.getElementById('term-title').textContent = rm.name;
+          document.getElementById('term-mission').textContent = rm.obj;
+          document.getElementById('btn-cnot').classList.toggle('hidden', rm.id < 6);
+          document.getElementById('wire-1-row').classList.toggle('hidden', rm.id < 6);
+          document.getElementById('term-feedback').classList.add('hidden');
+          document.getElementById('term-hist-output').textContent = '';
+          this.renderCircuit();
+          document.getElementById('terminal-modal').classList.remove('hidden');
+        } else if (obj.type === 'coin-wall') {
+          isModalOpen = true;
+          if (document.pointerLockElement) document.exitPointerLock();
+          this.renderCoinWallGrid();
+          document.getElementById('coinwall-modal').classList.remove('hidden');
+        } else if (obj.type === 'voicemail') {
+          Sounds.speak('Scientist', rm.vm);
+        } else if (obj.type === 'clue') {
+          isModalOpen = true;
+          if (document.pointerLockElement) document.exitPointerLock();
+          document.getElementById('info-modal-title').textContent = 'Research Whiteboard Clue';
+          document.getElementById('info-modal-body').innerHTML = `<p class="text-sm font-semibold">${rm.clue}</p><p class="text-slate-500 mt-2">Logged to your Quantum Notebook.</p>`;
+          document.getElementById('info-modal').classList.remove('hidden');
+        } else if (obj.type === 'orb') {
+          collectedOrbs.add(rm.id);
+          if (obj.mesh) obj.mesh.visible = false;
+          interactables = interactables.filter(i => i !== obj);
+          Sounds.tone(880, 0.25);
+          Sounds.speak('Arya', 'Collected a glowing Quantum Orb!');
+          updateHUD();
+        } else if (obj.type === 'cat') {
+          collectedCats.add(rm.id);
+          if (obj.mesh) obj.mesh.visible = false;
+          interactables = interactables.filter(i => i !== obj);
+          Sounds.tone(720, 0.3);
+          Sounds.speak('Q', "Meow! You rescued Schrödinger's Cat plush!");
+          updateHUD();
+        }
+      },
+      addGate(g) {
+        Sounds.tone(600, 0.08);
+        if (wire0.length < 5) wire0.push(g);
+        this.renderCircuit();
+      },
+      undoGate() {
+        wire0.pop();
+        this.renderCircuit();
+      },
+      resetCircuit() {
+        wire0 = [];
+        this.renderCircuit();
+      },
+      renderCircuit() {
+        const slots = document.getElementById('wire-0-slots');
+        slots.innerHTML = wire0.length
+          ? wire0.map(g => `<span class="px-2.5 py-1 bg-sky-600 text-white font-mono font-bold text-xs rounded">${g}</span>`).join('')
+          : '<span class="text-xs text-slate-400 italic">No gates (|0⟩)</span>';
+
+        const s1 = QuantumEngine.run1Q(wire0.filter(g => g !== 'CNOT'));
+        const b = QuantumEngine.bloch(s1);
+        const line = document.getElementById('bloch-line');
+        const tip = document.getElementById('bloch-tip');
+        const px = b.x * 80 + b.y * 18;
+        const py = -b.z * 80 - b.y * 8;
+        line.setAttribute('x2', px);
+        line.setAttribute('y2', py);
+        tip.setAttribute('cx', px);
+        tip.setAttribute('cy', py);
+        document.getElementById('bloch-label').textContent = b.label;
+
+        const eqEl = document.getElementById('term-scientist-eq');
+        if (isScientistMode) {
+          eqEl.classList.remove('hidden');
+          eqEl.textContent = `|ψ⟩ = (${s1[0].r.toFixed(2)})|0⟩ + (${s1[1].r.toFixed(2)})|1⟩`;
+        } else {
+          eqEl.classList.add('hidden');
+        }
+      },
+      measureSingle() {
+        Sounds.tone(480, 0.15);
+        const s1 = QuantumEngine.run1Q(wire0.filter(g => g !== 'CNOT'));
+        const p = QuantumEngine.probs1Q(s1);
+        const res = Math.random() < p.prob0 ? 0 : 1;
+        document.getElementById('term-hist-output').textContent = `Single Observation: |${res}⟩`;
+        this.validateSolution(false, p.prob0 * 100);
+      },
+      run100Shots() {
+        Sounds.tone(680, 0.2);
+        const rm = ROOMS[currentRoomIdx];
+        if (rm.id < 6) {
+          const s1 = QuantumEngine.run1Q(wire0);
+          const p = QuantumEngine.probs1Q(s1);
+          let c0 = 0;
+          const shots = [];
+          for (let i = 0; i < 100; i++) {
+            const bit = Math.random() < p.prob0 ? 0 : 1;
+            if (bit === 0) c0++;
+            shots.push(bit);
+          }
+          if (rm.id === 2) {
+            coinWallOutcomes = shots;
+            this.sync3DCoinWall();
+          }
+          document.getElementById('term-hist-output').textContent = `100 Shots → |0⟩: ${c0}%  |  |1⟩: ${100 - c0}%`;
+          this.validateSolution(true, c0);
+        } else {
+          let s2 = QuantumEngine.init2Q();
+          for (const g of wire0) s2 = QuantumEngine.apply2Q(s2, g, 0);
+          const p2 = QuantumEngine.probs2Q(s2);
+          const c00 = Math.round(p2.p00 * 100), c11 = Math.round(p2.p11 * 100);
+          document.getElementById('term-hist-output').textContent = `100 Shots → |00⟩: ${c00}% | |01⟩: 0% | |10⟩: 0% | |11⟩: ${c11}%`;
+          this.validateSolution(true, c00, p2);
+        }
+      },
+      validateSolution(isBatch, pct0, p2) {
+        const rm = ROOMS[currentRoomIdx];
+        let ok = false;
+        if (rm.id === 1 && pct0 >= 98) ok = true;
+        if (rm.id === 2 && isBatch && pct0 >= 38 && pct0 <= 62) ok = true;
+        if (rm.id === 3 && pct0 <= 2) ok = true;
+        if (rm.id === 4 && isBatch && pct0 >= 38 && pct0 <= 62 && wire0.includes('H')) ok = true;
+        if (rm.id === 5 && pct0 <= 2 && wire0.includes('Z') && wire0.filter(g => g === 'H').length >= 2) ok = true;
+        if (rm.id === 6 && p2 && p2.p11 >= 0.95) ok = true;
+        if (rm.id === 7 && p2 && p2.p00 >= 0.4 && p2.p11 >= 0.4) ok = true;
+
+        const fb = document.getElementById('term-feedback');
+        fb.classList.remove('hidden');
+        if (ok) {
+          fb.className = 'p-3 rounded-lg text-xs bg-emerald-50 border border-emerald-300 text-emerald-900 font-bold';
+          fb.textContent = '✓ QUANTUM STATE VERIFIED! Exit Door Unlocked! Walk through the green East door.';
+          this.unlockCurrentRoom();
+        } else {
+          fb.className = 'p-3 rounded-lg text-xs bg-amber-50 border border-amber-300 text-amber-900';
+          fb.textContent = 'Experiment logged. Adjust gates or run 100 shots to match the target state.';
+        }
+      },
+      unlockCurrentRoom() {
+        const rm = ROOMS[currentRoomIdx];
+        solvedRooms.add(rm.id);
+        if (exitDoor) exitDoor.material.color.setHex(0x22c55e);
+        Sounds.tone(880, 0.35);
+        updateHUD();
+      },
+      setCoinPrep(prep) {
+        coinPrep = prep;
+        ['zero', 'plus', 'one'].forEach(k => {
+          const btn = document.getElementById('cw-prep-' + k);
+          btn.className = k === prep
+            ? 'p-2 border rounded-lg text-xs font-bold bg-teal-600 text-white'
+            : 'p-2 border rounded-lg text-xs font-bold bg-white';
+        });
+      },
+      collapse100Coins() {
+        Sounds.tone(660, 0.2);
+        const prob0 = coinPrep === 'zero' ? 1.0 : coinPrep === 'one' ? 0.0 : 0.5;
+        let h = 0;
+        coinWallOutcomes = Array.from({ length: 100 }, () => {
+          const b = Math.random() < prob0 ? 0 : 1;
+          if (b === 0) h++;
+          return b;
+        });
+        this.renderCoinWallGrid();
+        this.sync3DCoinWall();
+        document.getElementById('cw-stats').textContent = `HEADS (|0⟩): ${h}% | TAILS (|1⟩): ${100 - h}%`;
+        if (coinPrep === 'plus' && h >= 38 && h <= 62) {
+          this.unlockCurrentRoom();
+          Sounds.speak('Arya', `Whoa! ${h}% Heads and ${100 - h}% Tails on the 100-coin wall! Vault door unlocked!`);
+        }
+      },
+      renderCoinWallGrid() {
+        const grid = document.getElementById('coin-grid-100');
+        grid.innerHTML = coinWallOutcomes.map(v =>
+          `<div class="w-6 h-6 rounded-full flex items-center justify-center font-mono text-[11px] font-bold ${v === 0 ? 'bg-teal-500 text-white' : 'bg-amber-400 text-slate-950'}">${v}</div>`
+        ).join('');
+      },
+      sync3DCoinWall() {
+        coinWallOutcomes.forEach((v, idx) => {
+          if (coinWallMeshes[idx]) {
+            coinWallMeshes[idx].material.color.setHex(v === 0 ? 0x14b8a6 : 0xf59e0b);
+          }
+        });
+      },
+      openNotebook() {
+        isModalOpen = true;
+        if (document.pointerLockElement) document.exitPointerLock();
+        document.getElementById('info-modal-title').textContent = "Arya's Quantum Research Notebook";
+        document.getElementById('info-modal-body').innerHTML = ROOMS.map(r => `
+          <div class="p-3 rounded-xl border ${solvedRooms.has(r.id) ? 'bg-sky-50 border-sky-200' : 'bg-slate-50 border-slate-200 opacity-60'}">
+            <div class="font-bold text-slate-900">Room ${r.id}: ${r.name}</div>
+            <div class="text-slate-600 mt-1">${solvedRooms.has(r.id) ? r.card : 'Solve this room to log discovery.'}</div>
+          </div>
+        `).join('');
+        document.getElementById('info-modal').classList.remove('hidden');
+      },
+      openPause() {
+        isModalOpen = true;
+        if (document.pointerLockElement) document.exitPointerLock();
+        document.getElementById('info-modal-title').textContent = 'System Paused';
+        document.getElementById('info-modal-body').innerHTML = `
+          <p class="font-semibold">Controls: WASD to move, Mouse to look, E to interact, H for Hint, Tab for Notebook.</p>
+          <div class="pt-4 flex gap-3">
+            <button onclick="window.GameUI.closeModals()" class="px-4 py-2 bg-sky-600 text-white rounded-lg font-bold">Resume Game</button>
+          </div>
+        `;
+        document.getElementById('info-modal').classList.remove('hidden');
+      },
+      showEnding() {
+        isModalOpen = true;
+        if (document.pointerLockElement) document.exitPointerLock();
+        document.getElementById('info-modal-title').textContent = '🏆 YOU ESCAPED! YOU ARE NOW A QUANTUM EXPLORER!';
+        document.getElementById('info-modal-body').innerHTML = `
+          <div class="p-4 bg-gradient-to-r from-sky-500 to-teal-400 text-white rounded-xl mb-4">
+            <p class="text-sm font-bold">"You didn't memorize the rules... You discovered them." — Q</p>
+          </div>
+          <p class="font-bold text-slate-900">Topics Mastered: Qubit, Bloch Sphere, Superposition, Measurement, X, H, Z, Phase Interference, CNOT & Entanglement.</p>
+          <p class="text-slate-600">Real-World Note: Today's NISQ-era quantum computers are researched for molecular simulation, optimization, and quantum-safe cryptography.</p>
+          <button onclick="location.reload()" class="mt-4 px-5 py-2.5 bg-sky-600 text-white font-bold rounded-xl">Play Again</button>
+        `;
+        document.getElementById('info-modal').classList.remove('hidden');
+      }
+    };
+
+    window.addEventListener('DOMContentLoaded', initThree);
+  </script>
+</body>
+</html>
